@@ -219,7 +219,7 @@ def _ubint16(x): return struct.unpack('>H', x)[0]
 def _sbint32(x): return struct.unpack('>i', x)[0]
 
 # name to opcode table
-_names = dict((v if type(v) == str else v[0], k) for k, v in _table.items())
+_names = dict((v if type(v) == str else v[0], k) for k, v in list(_table.items()))
 
 # opcodes which are valid for the "wide" instruction with length 3
 _wide_opcodes = sorted(_names[x] for x in ('iload', 'fload', 'aload', 'lload',
@@ -276,7 +276,7 @@ _other_opcodes = {
 }
 
 # convert the opcode names of _other_opcodes into opcode indices
-_other_opcodes = dict((_names[k], v) for k, v in _other_opcodes.items())
+_other_opcodes = dict((_names[k], v) for k, v in list(_other_opcodes.items()))
 
 class Instruction:
     def __init__(self, name=None, cp=None, local=None, length=None,

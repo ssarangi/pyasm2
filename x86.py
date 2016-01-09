@@ -97,7 +97,7 @@ class MemoryAddress:
         self.reg1 = reg1
         self.reg2 = reg2
         self.mult = mult
-        self.disp = Immediate(disp) if isinstance(disp, (int, long)) else disp
+        self.disp = Immediate(disp) if isinstance(disp, int) else disp
 
         self.clean()
 
@@ -143,9 +143,9 @@ class MemoryAddress:
         """Merge self with a Displacement, Register or Memory Address."""
         # it is not possible to merge with one of the predefined Memory
         # Addresses
-        assert id(self) not in map(id, (byte, word, dword, qword, oword))
+        assert id(self) not in list(map(id, (byte, word, dword, qword, oword)))
 
-        if isinstance(other, (int, long, Immediate)):
+        if isinstance(other, (int, Immediate)):
             assert int(other) >= 0 and int(other) < 2**32
             assert self.disp is None
 
@@ -283,7 +283,7 @@ class MemoryAddress:
             q = str(self.reg2) if self.mult == 1 else \
                 str(self.reg2) + '*' + str(self.mult)
             s += q if not len(s) else '+' + q
-        if self.disp.value:
+        if hasattr(self.disp, "value"):
             if self.disp >= 0:
                 q = '0x%x' % int(self.disp)
             else:
@@ -343,7 +343,7 @@ class GeneralPurposeRegister:
 
     def __add__(self, other):
         """self + other"""
-        if isinstance(other, (int, long, Immediate)):
+        if isinstance(other, (int, Immediate)):
             return MemoryAddress(reg1=self, disp=other)
         if isinstance(other, GeneralPurposeRegister):
             return MemoryAddress(reg1=self, reg2=other, mult=1)
@@ -475,7 +475,7 @@ class Instruction:
     operand is not a tuple, it defines a hardcoded operand.
 
     """
-    VALID_OPERANDS = (int, long, SegmentRegister, GeneralPurposeRegister,
+    VALID_OPERANDS = (int, int, SegmentRegister, GeneralPurposeRegister,
                       MemoryAddress, Immediate, XmmRegister, list)
 
     # we use a ctypes-like way to implement instructions.
@@ -493,7 +493,7 @@ class Instruction:
         assert not isinstance(operand2, list) or len(operand2) == 1
 
         # convert int and long's to Immediate values.
-        f = lambda x: x if not isinstance(x, (int, long)) else Immediate(x)
+        f = lambda x: x if not isinstance(x, int) else Immediate(x)
         # convert lists with one entry to Memory Addresses
         g = lambda x: x if not isinstance(x, list) else x[0]
 
@@ -611,7 +611,8 @@ class Instruction:
             # no displacement at all. when `mod' is three, there has to be
             # either a 8bit displacement or a 32bit one.
             if mod in (2, 3):
-                disp = int(op2.disp) % 2**32
+                if op2.disp is not None:
+                    disp = int(op2.disp) % 2**32
                 if op2.disp is None:
                     if mod == 3:
                         mod = 1
@@ -634,7 +635,7 @@ class Instruction:
             # if required, construct the sib byte
             ret += chr((S << 6) + (index << 3) + base)
         # append the buf, if it contains anything.
-        return ret + buf
+        return ret + str(buf)
 
     def encoding(self):
         """Returns the Encoding used, as defined by `_enc_'.
@@ -719,9 +720,10 @@ class Instruction:
             s += 'rep '
 
         s += self.name()
-        ops = filter(lambda x: x is not None, (self.op1, self.op2, self.op3))
+        ops = [x for x in (self.op1, self.op2, self.op3) if x is not None]
         if len(ops):
-            return s + ' ' + ', '.join(map(str, ops))
+            v = s + ' ' + ', '.join(map(str, ops))
+            return v
         return s
 
     def __len__(self):
@@ -755,7 +757,7 @@ class Instruction:
         ret += chr(opcode) if isinstance(opcode, int) else opcode
         disp = ''
 
-        for i in xrange(3):
+        for i in range(3):
             op = enc[i+1]
             # we don't have to process empty operands or hardcoded values
             if op is None or not isinstance(op, tuple):
@@ -771,7 +773,7 @@ class Instruction:
 
             # handle Immediates
             if typ == imm:
-                disp += size.pack(ops[i])
+                disp += str(size.pack(ops[i]))
                 continue
 
             # handle the reg part of the modrm byte
@@ -857,7 +859,7 @@ class Block:
         self.label_base = 0
 
         # add each argument to the list
-        map(self.append, args)
+        list(map(self.append, args))
 
     def __repr__(self):
         """Return a string representation of all instructions chained."""
@@ -903,7 +905,7 @@ class Block:
         # first we obtain the offset of each label
         for idx, instr in enumerate(self._l):
             # convert any class objects to instances
-            if isinstance(instr, types.ClassType):
+            if isinstance(instr, type):
                 instr = instr()
                 self._l[idx] = instr
 
@@ -933,7 +935,7 @@ class Block:
                 if isinstance(instr.value, Label):
 
                     # is this an anonymous label?
-                    if isinstance(instr.value, (int, long)):
+                    if isinstance(instr.value, int):
                         # make an absolute index from the relative one
                         instr.value.index += len(local_labels)
 
@@ -963,7 +965,7 @@ class Block:
         """Append instruction(s) in `other' to `self'."""
         # if a class object was given, we create an instance ourselves
         # this can be either an Instruction or a Label
-        if isinstance(other, (types.ClassType, _MetaLabel)):
+        if isinstance(other, (type, _MetaLabel)):
             other = other()
 
         def labelify(val):
@@ -995,7 +997,7 @@ class Block:
             # TODO add memory address support
 
         elif isinstance(other, (list, tuple)):
-            map(self.append, other)
+            list(map(self.append, other))
 
         elif isinstance(other, Block):
             # we merge the `other' block with ours, by appending.
@@ -1003,7 +1005,7 @@ class Block:
             # ever occurs, implement a __deepcopy__ which only makes a new
             # copy of Labels
             # map(self.append, map(copy.deepcopy, other._l))
-            map(self.append, other._l)
+            list(map(self.append, other._l))
 
         else:
             raise Exception('This object is not welcome here.')
@@ -1037,9 +1039,7 @@ class _MetaLabel(type):
         return Label(other)
 
 
-class Label:
-    __metaclass__ = _MetaLabel
-
+class Label(metaclass=_MetaLabel):
     def __init__(self, index=0):
         self.index = index
 
@@ -1079,8 +1079,8 @@ class nop(Instruction):
 class mov(Instruction):
     # mov r32, imm32 and mov r8, imm32
     _enc_ = \
-        zip(range(0xb0, 0xb8), gpr.register8, ((byte, imm),) * 8) + \
-        zip(range(0xb8, 0xc0), gpr.register32, ((dword, imm),) * 8) + \
+        list(zip(list(range(0xb0, 0xb8)), gpr.register8, ((byte, imm),) * 8)) + \
+        list(zip(list(range(0xb8, 0xc0)), gpr.register32, ((dword, imm),) * 8)) + \
         [
             (0x8b, (dword, gpr), (dword, memgpr)),
             (0x89, (dword, memgpr), (dword, gpr)),
@@ -1106,7 +1106,7 @@ class movsx(Instruction):
 
 class push(Instruction):
     # push r32
-    _enc_ = zip(range(0x50, 0x58), gpr.register32) + [
+    _enc_ = list(zip(list(range(0x50, 0x58)), gpr.register32)) + [
         (0x06, es),
         (0x0e, cs),
         (0x16, ss),
@@ -1121,7 +1121,7 @@ class push(Instruction):
 
 class pop(Instruction):
     # pop r32
-    _enc_ = zip(range(0x58, 0x60), gpr.register32) + [
+    _enc_ = list(zip(list(range(0x58, 0x60)), gpr.register32)) + [
         (0x07, es),
         (0x17, ss),
         (0x1f, ds),
@@ -1133,21 +1133,21 @@ class pop(Instruction):
 
 class inc(Instruction):
     # inc r32
-    _enc_ = zip(range(0x40, 0x48), gpr.register32) + [
+    _enc_ = list(zip(list(range(0x40, 0x48)), gpr.register32)) + [
         (0xfe, (byte, memgpr, 0)),
         (0xff, (dword, memgpr, 0))]
 
 
 class dec(Instruction):
     # dec r32
-    _enc_ = zip(range(0x48, 0x50), gpr.register32) + [
+    _enc_ = list(zip(list(range(0x48, 0x50)), gpr.register32)) + [
         (0xfe, (byte, memgpr, 1)),
         (0xff, (dword, memgpr, 1))]
 
 
 class xchg(Instruction):
     # xchg eax, r32
-    _enc_ = zip(range(0x91, 0x98), gpr.register32[1:], (eax,) * 8) + [
+    _enc_ = list(zip(list(range(0x91, 0x98)), gpr.register32[1:], (eax,) * 8)) + [
         (0x86, (byte, memgpr), (byte, gpr)),
         (0x87, (dword, memgpr), (dword, memgpr))]
 
@@ -1334,7 +1334,7 @@ class jnle(RelativeJump):
 
 
 def _branch_instr(name, opcode, enc, arg):
-    if not isinstance(arg, (int, long, str, Label)):
+    if not isinstance(arg, (int, str, Label)):
         i = Instruction(arg)
         i._enc_ = enc
         i._name_ = name
