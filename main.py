@@ -27,14 +27,14 @@ THE SOFTWARE.
 from x86 import *
 
 def main():
-    i = block(mov(eax, 1), mov(ebx, 1))
+    # i = block(mov(eax, 1), mov(ebx, 1))
     s = 'mov eax, 0x1\nmov ebx, 0x1\n'
     b = b'\xb8\x01\x00\x00\x00\xbb\x01\x00\x00\x00'
 
-    t = push(eax)
-    print(str(t))
+    # t = push(eax)
+    # print(str(t))
 
-    v = str(i)
+    i = mov(eax, 1)
     print(str(i))
 
 if __name__ == "__main__":
