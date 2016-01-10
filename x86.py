@@ -18,6 +18,7 @@ The syntax of pyasm2 is supposed to be as simple as possible.
 """
 import struct
 import types
+import binascii
 
 
 class Immediate:
@@ -320,7 +321,23 @@ class MemoryAddress:
         # convert the value, if it's negative.
         value = int(value) if int(value) >= 0 else int(value) + 2**self.size
 
-        return struct.pack(fmt[self.size], value)
+        v = struct.pack(fmt[self.size], value)
+        return v
+
+    def pack_op(self, value):
+        assert self.size is not None
+
+        value = int(value) if int(value) >= 0 else int(value) + 2**self.size
+
+        fmt = {8: 1, 16: 2, 32: 4, 64: 8}
+
+        bytes_to_mask = fmt[self.size]
+
+        v = []
+        for i in range(0, bytes_to_mask):
+            v.append(hex(value & (0xFF << i * 8)))
+
+        return v
 
 # define the size for the memory addresses
 byte = MemoryAddress(size=8)
@@ -793,6 +810,71 @@ class Instruction:
 
         self._encode = ret + disp
         return self._encode
+
+    def bytes(self):
+        """Encode this Instruction into its machine code representation."""
+        enc = self.encoding()
+
+        ret = []
+
+        if self.lock:
+            ret.append(hex(0xf0))
+
+        if self.repne:
+            ret.append(hex(0xf2))
+
+        if self.rep:
+            ret.append(hex(0xf3))
+
+        if enc is None:
+            op = self._opcode_
+            ret.append(hex(op))
+            return ret
+
+        opcode, op1, op2, op3 = enc
+        ops = (self.op1, self.op2, self.op3)
+        modrm_reg = modrm_rm = None
+
+        ret.append(hex(opcode))
+        disp = []
+
+        for i in range(3):
+            op = enc[i+1]
+            # we don't have to process empty operands or hardcoded values
+            if op is None or not isinstance(op, tuple):
+                continue
+
+            size, typ = op[:2]
+
+            # if a third index is given in the operand's tuple, then that
+            # means that we have to emulate the `reg' for the modrm byte.
+            # the value of `reg' is therefore given as third value.
+            if len(op) == 3:
+                modrm_reg = gpr.register32[op[2]]
+
+            # handle Immediates
+            if typ == imm:
+                disp += (size.pack_op(ops[i]))
+                continue
+
+            # handle the reg part of the modrm byte
+            if typ not in (mem, memgpr, memxmm) and modrm_reg is None:
+                modrm_reg = ops[i]
+                continue
+
+            # handle the rm part of the modrm byte
+            if typ in (mem, gpr, xmm, memgpr, memxmm):
+                modrm_rm = ops[i]
+                continue
+
+            raise Exception('Unknown Type')
+
+        if modrm_reg or modrm_rm:
+            ret.append(hex(self.modrm(modrm_reg, modrm_rm)))
+
+        self._bytes = ret + disp
+        return self._bytes
+
 
     def __add__(self, other):
         return Block(self, other)

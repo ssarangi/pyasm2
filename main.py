@@ -25,6 +25,8 @@ THE SOFTWARE.
 # Easy testing.
 
 from x86 import *
+import jitter
+import binascii
 
 def main():
     # i = block(mov(eax, 1), mov(ebx, 1))
@@ -34,8 +36,17 @@ def main():
     # t = push(eax)
     # print(str(t))
 
-    i = mov(eax, 1)
-    print(str(i))
+    insts = []
+    insts.append(mov(eax, 50))
+    insts.append(ret())
+
+    x86bytes = []
+    for inst in insts:
+        x86bytes += inst.bytes()
+
+    x86_bytes = bytes(int(x, 16) for x in x86bytes)
+    val = jitter.jit(x86_bytes)
+    print("Final return value: %s" % val)
 
 if __name__ == "__main__":
     main()
