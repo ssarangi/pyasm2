@@ -53,7 +53,6 @@ int emit_to_rw_run_from_rx(unsigned char *code) {
 
   JittedFunc func = m;
   int result = func(4);
-  printf("result = %d\n", result);
   return result;
 }
 
