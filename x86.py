@@ -335,7 +335,7 @@ class MemoryAddress:
 
         v = []
         for i in range(0, bytes_to_mask):
-            v.append(hex(value & (0xFF << i * 8)))
+            v.append(value & (0xFF << i * 8))
 
         return v
 
@@ -556,7 +556,7 @@ class Instruction:
 
         reg = op1.index
 
-        buf = ''
+        buf = []
         sib = False
 
         if isinstance(op2, (GeneralPurposeRegister, XmmRegister)):
@@ -571,6 +571,7 @@ class Instruction:
                     assert op2.disp is not None
                     mod = 0
                     rm = 5
+                    raise Exception("Line below needs to be fixed")
                     buf = struct.pack('I', op2.disp % 2**32)
                 else:
                     sib = True
@@ -582,6 +583,7 @@ class Instruction:
                     # multiplication other than one without a 32bit
                     # displacement.
                     base = 5
+                    raise Exception("Line below needs to be fixed")
                     buf = struct.pack('I', op2.disp % 2**32 if op2.disp else 0)
             else:
                 if op2.reg2 is None:
@@ -638,21 +640,24 @@ class Instruction:
                         mod = 0
                 elif disp >= 0 and disp < 0x80:
                     mod = 1
+                    raise Exception("Need to fix line below")
                     buf = chr(disp)
                 elif disp >= 0xffffff80 and disp < 2**32:
                     mod = 1
+                    raise Exception("Need to fix line below")
                     buf = chr(disp & 0xff)
                 else:
                     mod = 2
+                    raise Exception("Need to fix line below")
                     buf = struct.pack('I', disp)
 
         # construct the modrm byte
-        ret = chr((mod << 6) + (reg << 3) + rm)
+        ret = [(mod << 6) + (reg << 3) + rm]
         if sib:
             # if required, construct the sib byte
-            ret += chr((S << 6) + (index << 3) + base)
+            ret.append((S << 6) + (index << 3) + base)
         # append the buf, if it contains anything.
-        return ret + str(buf)
+        return ret + buf
 
     def encoding(self):
         """Returns the Encoding used, as defined by `_enc_'.
@@ -745,7 +750,7 @@ class Instruction:
 
     def __len__(self):
         """Return the Length of the Machine Code."""
-        return self.__str__().__len__()
+        return len(self.bytes())
 
     def __str__(self):
         """Encode this Instruction into its machine code representation."""
@@ -814,28 +819,37 @@ class Instruction:
     def bytes(self):
         """Encode this Instruction into its machine code representation."""
         enc = self.encoding()
+        if isinstance(self._opcode_, str):
+            self._opcode_ = int(self._opcode_, 16)
 
         ret = []
 
         if self.lock:
-            ret.append(hex(0xf0))
+            ret.append(0xf0)
 
         if self.repne:
-            ret.append(hex(0xf2))
+            ret.append(0xf2)
 
         if self.rep:
-            ret.append(hex(0xf3))
+            ret.append(0xf3)
 
         if enc is None:
             op = self._opcode_
-            ret.append(hex(op))
+            ret.append(op)
             return ret
 
         opcode, op1, op2, op3 = enc
         ops = (self.op1, self.op2, self.op3)
         modrm_reg = modrm_rm = None
 
-        ret.append(hex(opcode))
+        if isinstance(opcode, list):
+            for opcode_ in opcode:
+                if isinstance(opcode_, str):
+                    opcode_ = int(opcode_, 16)
+                ret.append(opcode_)
+        else:
+            ret.append(opcode)
+
         disp = []
 
         for i in range(3):
@@ -870,7 +884,8 @@ class Instruction:
             raise Exception('Unknown Type')
 
         if modrm_reg or modrm_rm:
-            ret.append(hex(self.modrm(modrm_reg, modrm_rm)))
+            bytes = [byte for byte in self.modrm(modrm_reg, modrm_rm)]
+            ret += bytes
 
         self._bytes = ret + disp
         return self._bytes
@@ -1025,14 +1040,14 @@ class Block:
         # relative jumps
         # ...
 
-        machine_code = ''
+        machine_code = []
         offset = 0
 
         # now we assemble the machine code
         for instr in self._l:
 
             if isinstance(instr, Instruction):
-                machine_code += str(instr)
+                machine_code += instr.bytes()
 
             elif isinstance(instr, RelativeJump):
                 machine_code += instr.assemble(short=False,
@@ -1174,15 +1189,15 @@ class mov(Instruction):
 
 class movzx(Instruction):
     _enc_ = [
-        ('\x0f\xb6', (dword, gpr), (byte, memgpr)),
-        ('\x0f\xb7', (dword, gpr), (word, memgpr)),
+        ([0x0f, 0xb6], (dword, gpr), (byte, memgpr)),
+        ([0x0f, 0xb7], (dword, gpr), (word, memgpr)),
     ]
 
 
 class movsx(Instruction):
     _enc_ = [
-        ('\x0f\xbe', (dword, gpr), (byte, memgpr)),
-        ('\x0f\xbf', (dword, gpr), (word, memgpr)),
+        ([0x0f, 0xbe], (dword, gpr), (byte, memgpr)),
+        ([0x0f, 0xbf], (dword, gpr), (word, memgpr)),
     ]
 
 
@@ -1193,8 +1208,8 @@ class push(Instruction):
         (0x0e, cs),
         (0x16, ss),
         (0x1e, ds),
-        ('\x0f\xa0', fs),
-        ('\x0f\xa8', gs),
+        ([0x0f, 0xa0], fs),
+        ([0x0f, 0xa8], gs),
         (0x6a, (byte, imm)),
         (0x68, (dword, imm)),
         (0xff, (dword, mem, 6)),
@@ -1207,8 +1222,8 @@ class pop(Instruction):
         (0x07, es),
         (0x17, ss),
         (0x1f, ds),
-        ('\x0f\xa1', fs),
-        ('\x0f\xa9', gs),
+        ([0x0f, 0xa1], fs),
+        ([0x0f, 0xa9], gs),
         (0x8f, (dword, mem, 0)),
     ]
 
@@ -1263,85 +1278,85 @@ class lea(Instruction):
 
 
 class pshufd(Instruction):
-    _enc_ = [('\x66\x0f\x70', (oword, xmm), (oword, memxmm), (byte, imm))]
+    _enc_ = [([0x66, 0x0f, 0x70], (oword, xmm), (oword, memxmm), (byte, imm))]
 
 
 class paddb(Instruction):
-    _enc_ = [('\x66\x0f\xfc', (oword, xmm), (oword, memxmm))]
+    _enc_ = [([0x66, 0x0f, 0xfc], (oword, xmm), (oword, memxmm))]
 
 
 class paddw(Instruction):
-    _enc_ = [('\x66\x0f\xfd', (oword, xmm), (oword, memxmm))]
+    _enc_ = [([0x66, 0x0f, 0xfd], (oword, xmm), (oword, memxmm))]
 
 
 class paddd(Instruction):
-    _enc_ = [('\x66\x0f\xfe', (oword, xmm), (oword, memxmm))]
+    _enc_ = [([0x66, 0x0f, 0xfe], (oword, xmm), (oword, memxmm))]
 
 
 class psubb(Instruction):
-    _enc_ = [('\x66\x0f\xf8', (oword, xmm), (oword, memxmm))]
+    _enc_ = [([0x66, 0x0f, 0xf8], (oword, xmm), (oword, memxmm))]
 
 
 class psubw(Instruction):
-    _enc_ = [('\x66\x0f\xf9', (oword, xmm), (oword, memxmm))]
+    _enc_ = [([0x66, 0x0f, 0xf9], (oword, xmm), (oword, memxmm))]
 
 
 class psubd(Instruction):
-    _enc_ = [('\x66\x0f\xfa', (oword, xmm), (oword, memxmm))]
+    _enc_ = [([0x66, 0x0f, 0xfa], (oword, xmm), (oword, memxmm))]
 
 
 class pand(Instruction):
-    _enc_ = [('\x66\x0f\xdb', (oword, xmm), (oword, memxmm))]
+    _enc_ = [([0x66, 0x0f, 0xdb], (oword, xmm), (oword, memxmm))]
 
 
 class pandn(Instruction):
-    _enc_ = [('\x66\x0f\xdf', (oword, xmm), (oword, memxmm))]
+    _enc_ = [([0x66, 0x0f, 0xdf], (oword, xmm), (oword, memxmm))]
 
 
 class por(Instruction):
-    _enc_ = [('\x66\x0f\xeb', (oword, xmm), (oword, memxmm))]
+    _enc_ = [([0x66, 0x0f, 0xeb], (oword, xmm), (oword, memxmm))]
 
 
 class pxor(Instruction):
-    _enc_ = [('\x66\x0f\xef', (oword, xmm), (oword, memxmm))]
+    _enc_ = [([0x66, 0x0f, 0xef], (oword, xmm), (oword, memxmm))]
 
 
 class pmuludq(Instruction):
-    _enc_ = [('\x66\x0f\xf4', (oword, xmm), (oword, memxmm))]
+    _enc_ = [([0x66, 0x0f, 0xf4], (oword, xmm), (oword, memxmm))]
 
 
 class movaps(Instruction):
     _enc_ = [
-        ('\x0f\x28', (oword, xmm), (oword, memxmm)),
-        ('\x0f\x29', (oword, memxmm), (oword, xmm)),
+        ([0x0f, 0x28], (oword, xmm), (oword, memxmm)),
+        ([0x0f, 0x29], (oword, memxmm), (oword, xmm)),
     ]
 
 
 class movups(Instruction):
     _enc_ = [
-        ('\x0f\x10', (oword, xmm), (oword, memxmm)),
-        ('\x0f\x11', (oword, memxmm), (oword, xmm)),
+        ([0x0f, 0x10], (oword, xmm), (oword, memxmm)),
+        ([0x0f, 0x11], (oword, memxmm), (oword, xmm)),
     ]
 
 
 class movapd(Instruction):
     _enc_ = [
-        ('\x66\x0f\x28', (oword, xmm), (oword, memxmm)),
-        ('\x66\x0f\x29', (oword, memxmm), (oword, xmm)),
+        ([0x66, 0x0f, 0x28], (oword, xmm), (oword, memxmm)),
+        ([0x66, 0x0f, 0x28], (oword, memxmm), (oword, xmm)),
     ]
 
 
 class movd(Instruction):
     _enc_ = [
-        ('\x66\x0f\x6e', (oword, xmm), (dword, memgpr)),
-        ('\x66\x0f\x7e', (dword, memgpr), (oword, xmm)),
+        ([0x66, 0x0f, 0x6e], (oword, xmm), (dword, memgpr)),
+        ([0x66, 0x0f, 0x7e], (dword, memgpr), (oword, xmm)),
     ]
 
 
 class movss(Instruction):
     _enc_ = [
-        ('\xf3\x0f\x10', (oword, xmm), (oword, memxmm)),
-        ('\xf3\x0f\x11', (oword, memxmm), (oword, xmm)),
+        ([0xf3, 0x0f, 0x10], (oword, xmm), (oword, memxmm)),
+        ([0xf3, 0x0f, 0x11], (oword, memxmm), (oword, xmm)),
     ]
 
 
@@ -1551,11 +1566,10 @@ class mul(Instruction):
 
 class imul(Instruction):
     _enc_ = _group_3_opcodes(5) + [
-        ('\x0f\xaf', (dword, gpr), (dword, memgpr)),
+        ([0x0f, 0xaf], (dword, gpr), (dword, memgpr)),
         (0x6b, (dword, gpr), (dword, memgpr), (byte, imm)),
         (0x69, (dword, gpr), (dword, memgpr), (dword, imm))
     ]
-
 
 class div(Instruction):
     _enc_ = _group_3_opcodes(6)
@@ -1590,15 +1604,15 @@ class popf(Instruction):
 
 
 class cpuid(Instruction):
-    _opcode_ = '\x0f\xa2'
+    _opcode_ = [0x0f, 0xa2]
 
 
 class sysenter(Instruction):
-    _opcode_ = '\x0f\x34'
+    _opcode_ = [0x0f, 0x34]
 
 
 class fninit(Instruction):
-    _opcode_ = '\xdb\xe3'
+    _opcode_ = [0xdb, 0xe3]
 
 
 class cdq(Instruction):
